@@ -14,7 +14,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
-    dialog_wifi.c dialog_bluetooth.c wifi.cpp controls.cpp usb_devices.cpp
+    dialog_wifi.c dialog_bluetooth.c bluetooth.c wifi.cpp controls.cpp usb_devices.cpp
     knobs.cpp
 )
 
@@ -34,7 +34,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
-    libnm dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa
+    libnm gio-2.0 dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa
 )
 
 
