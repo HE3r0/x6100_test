@@ -13,3 +13,8 @@ This tree is the **active MAC6100 GUI baseline** (gdyuldin v0.34.2, no BT APP bu
 - Edit **this** WSL clone (`~/Projects/test/x6100`), not `~/Projects/x6100_gui` (obsolete)
 - After changes, rebuild from Aether: `x6100-gui-dirclean` → `x6100-gui-rebuild` → `make`
 - Start new features from Buildroot tag `mac6100-baseline-1` + this tree
+
+## Active feature branch
+
+- Branch: `feature/bluetooth-ui` — Bluetooth GUI (start from MAC6100 baseline)
+- Soft-button shell first; BlueZ actions come later
