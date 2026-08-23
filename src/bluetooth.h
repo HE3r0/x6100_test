@@ -14,6 +14,9 @@ typedef enum {
     BT_STATUS_ERROR,
 } bt_status_t;
 
+/** Apply saved preference: default OFF unless params.bt_enabled. */
+void bluetooth_power_setup(void);
+
 void bluetooth_refresh(void);
 
 bt_status_t bluetooth_get_status(void);

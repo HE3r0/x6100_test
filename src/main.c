@@ -37,6 +37,7 @@
 #include "qso_log.h"
 #include "scheduler.h"
 #include "wifi.h"
+#include "bluetooth.h"
 #include "usb_devices.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
@@ -112,6 +113,7 @@ int main(void) {
     radio_set_rx_tx_notify_fn(&main_screen_notify_rx_tx);
     radio_set_low_power_cb(&main_screen_notify_low_power);
     wifi_power_setup();
+    bluetooth_power_setup();
     backlight_init();
     cat_init();
     gps_init();

@@ -6,6 +6,10 @@
 
 #include "bluetooth.h"
 
+#include "params/params.h"
+
+#include "lvgl/lvgl.h"
+
 #include <gio/gio.h>
 #include <string.h>
 
@@ -22,6 +26,7 @@ static bool        pairable = false;
 static char        alias[64] = "";
 
 static GDBusConnection *bus = NULL;
+static lv_timer_t      *enforce_off_timer = NULL;
 
 static bool ensure_bus(void) {
     GError *error = NULL;
@@ -131,6 +136,37 @@ void bluetooth_refresh(void) {
     }
 }
 
+static void enforce_off_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    enforce_off_timer = NULL;
+
+    if (params.bt_enabled.x) {
+        return;
+    }
+
+    bluetooth_refresh();
+    if (bluetooth_is_powered() || bluetooth_get_status() == BT_STATUS_ERROR) {
+        bluetooth_power_off();
+    }
+}
+
+void bluetooth_power_setup(void) {
+    /* Default policy: BT off unless user previously enabled it. */
+    if (params.bt_enabled.x) {
+        bluetooth_power_on();
+        return;
+    }
+
+    bluetooth_power_off();
+
+    /* hci0 may appear after WiFi RF comes up — re-assert OFF shortly after boot. */
+    if (enforce_off_timer) {
+        lv_timer_del(enforce_off_timer);
+    }
+    enforce_off_timer = lv_timer_create(enforce_off_timer_cb, 3000, NULL);
+    lv_timer_set_repeat_count(enforce_off_timer, 1);
+}
+
 bt_status_t bluetooth_get_status(void) {
     return status;
 }
@@ -144,6 +180,7 @@ bool bluetooth_power_on(void) {
         bluetooth_refresh();
         return false;
     }
+    params_bool_set(&params.bt_enabled, true);
     bluetooth_refresh();
     return bluetooth_is_powered();
 }
@@ -151,8 +188,11 @@ bool bluetooth_power_on(void) {
 bool bluetooth_power_off(void) {
     if (!adapter_set_bool("Powered", false)) {
         bluetooth_refresh();
+        /* Still remember preference as off. */
+        params_bool_set(&params.bt_enabled, false);
         return false;
     }
+    params_bool_set(&params.bt_enabled, false);
     bluetooth_refresh();
     return !bluetooth_is_powered();
 }

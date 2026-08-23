@@ -162,6 +162,7 @@ typedef struct {
     /* WiFi / BT */
 
     params_bool_t       wifi_enabled;
+    params_bool_t       bt_enabled;
 
     /* Theme */
 

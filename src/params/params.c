@@ -99,6 +99,7 @@ params_t params = {
     .callsign               = { .x = "",  .max_len = 12, .name = "callsign" },
 
     .wifi_enabled           = { .x = false, .name="wifi_enabled" },
+    .bt_enabled             = { .x = false, .name="bt_enabled" },
 
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
 };
@@ -255,6 +256,7 @@ static bool params_load() {
 
         if (params_load_str(&params.callsign, name, t)) continue;
         if (params_load_bool(&params.wifi_enabled, name, i)) continue;
+        if (params_load_bool(&params.bt_enabled, name, i)) continue;
         if (params_load_uint8(&params.theme, name, i)) continue;
     }
 
@@ -361,6 +363,7 @@ static void params_save() {
     params_save_str(&params.qth);
     params_save_str(&params.callsign);
     params_save_bool(&params.wifi_enabled);
+    params_save_bool(&params.bt_enabled);
     params_save_uint8(&params.theme);
 
     sql_query_exec("COMMIT");
