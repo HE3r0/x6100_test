@@ -15,21 +15,29 @@
 
 #include "lvgl/lvgl.h"
 
+#include <stdint.h>
+#include <stdio.h>
+
 #define DIALOG_WIDTH  775
 #define DIALOG_HEIGHT 320
 #define PARAMS_WIDTH  300
+#define UI_POLL_MS    1000
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb(void);
 static void key_cb(lv_event_t *e);
+static void cell_selected_cb(lv_event_t *e);
 
 static void bt_power_toggle_cb(button_data_t *btn_data);
+static void bt_scan_cb(button_data_t *btn_data);
 static const char *bt_on_off_label_getter(void);
 static const char *bt_scan_label_getter(void);
 static const char *bt_pair_label_getter(void);
 
 static void refresh_status_labels(void);
 static void refresh_soft_buttons(void);
+static void refresh_device_table(void);
+static void ui_poll_cb(lv_timer_t *timer);
 
 static button_data_t btn_on_off = {
     .type     = BTN_TEXT_FN,
@@ -39,7 +47,7 @@ static button_data_t btn_on_off = {
 static button_data_t btn_scan = {
     .type     = BTN_TEXT_FN,
     .label_fn = bt_scan_label_getter,
-    .press    = NULL,
+    .press    = bt_scan_cb,
 };
 static button_data_t btn_pair = {
     .type     = BTN_TEXT_FN,
@@ -57,10 +65,12 @@ static buttons_page_t btn_page = {
      }
 };
 
-static lv_obj_t *device_table;
-static lv_obj_t *label_alias;
-static lv_obj_t *label_discoverable;
-static lv_obj_t *label_pairable;
+static lv_obj_t   *device_table = NULL;
+static lv_obj_t   *label_alias = NULL;
+static lv_obj_t   *label_discoverable = NULL;
+static lv_obj_t   *label_pairable = NULL;
+static lv_timer_t *ui_poll_timer = NULL;
+static bool        updating_table = false;
 
 static dialog_t dialog = {
     .run          = false,
@@ -111,6 +121,70 @@ static void refresh_soft_buttons(void) {
         if (page->items[i]) {
             buttons_refresh(page->items[i]);
         }
+    }
+}
+
+static void refresh_device_table(void) {
+    bt_device_info_t devices[BT_MAX_DEVICES];
+    size_t           count;
+    size_t           i;
+    char             line[96];
+
+    if (!device_table) {
+        return;
+    }
+
+    updating_table = true;
+
+    if (!bluetooth_is_powered()) {
+        lv_table_set_row_cnt(device_table, 1);
+        lv_table_set_cell_value(device_table, 0, 0, "Turn Bluetooth on");
+        lv_table_set_cell_user_data(device_table, 0, 0, (void *)(intptr_t)-1);
+        updating_table = false;
+        return;
+    }
+
+    if (bluetooth_scanning()) {
+        bluetooth_refresh_devices();
+    }
+
+    count = bluetooth_copy_devices(devices, BT_MAX_DEVICES);
+    if (count == 0) {
+        lv_table_set_row_cnt(device_table, 1);
+        lv_table_set_cell_value(device_table, 0, 0,
+                                bluetooth_scanning() ? "Scanning..." : "Press Scan");
+        lv_table_set_cell_user_data(device_table, 0, 0, (void *)(intptr_t)-1);
+        updating_table = false;
+        return;
+    }
+
+    lv_table_set_row_cnt(device_table, (uint16_t)count);
+    for (i = 0; i < count; i++) {
+        const char *mark = devices[i].connected ? " [C]" : (devices[i].paired ? " [P]" : "");
+
+        if (devices[i].rssi != 0) {
+            snprintf(line, sizeof(line), "%s%s  %s  %ddBm", devices[i].name, mark,
+                     devices[i].address, (int)devices[i].rssi);
+        } else {
+            snprintf(line, sizeof(line), "%s%s  %s", devices[i].name, mark, devices[i].address);
+        }
+        lv_table_set_cell_value(device_table, (uint16_t)i, 0, line);
+        lv_table_set_cell_user_data(device_table, (uint16_t)i, 0, (void *)(intptr_t)i);
+    }
+
+    updating_table = false;
+}
+
+static void ui_poll_cb(lv_timer_t *timer) {
+    (void)timer;
+
+    if (!dialog.run) {
+        return;
+    }
+
+    if (bluetooth_scanning()) {
+        refresh_device_table();
+        refresh_soft_buttons();
     }
 }
 
@@ -179,22 +253,56 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_pad_right(device_table, 0, LV_PART_ITEMS);
 
     lv_table_set_row_cnt(device_table, 1);
-    lv_table_set_cell_value(device_table, 0, 0, "No devices yet");
+    lv_table_set_cell_value(device_table, 0, 0, "Press Scan");
+    lv_table_set_cell_user_data(device_table, 0, 0, (void *)(intptr_t)-1);
 
     lv_obj_add_event_cb(device_table, key_cb, LV_EVENT_KEY, NULL);
+    lv_obj_add_event_cb(device_table, cell_selected_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_group_add_obj(keyboard_group, device_table);
     lv_group_set_editing(keyboard_group, true);
 
     bluetooth_refresh();
     refresh_status_labels();
+    refresh_device_table();
     refresh_soft_buttons();
+
+    ui_poll_timer = lv_timer_create(ui_poll_cb, UI_POLL_MS, NULL);
 }
 
 static void destruct_cb(void) {
+    if (ui_poll_timer) {
+        lv_timer_del(ui_poll_timer);
+        ui_poll_timer = NULL;
+    }
+    bluetooth_stop_scan();
+
     device_table = NULL;
     label_alias = NULL;
     label_discoverable = NULL;
     label_pairable = NULL;
+}
+
+static void cell_selected_cb(lv_event_t *e) {
+    lv_obj_t *obj;
+    uint16_t  row;
+    uint16_t  col;
+    intptr_t  index;
+
+    if (updating_table) {
+        return;
+    }
+
+    obj = lv_event_get_target(e);
+    lv_table_get_selected_cell(obj, &row, &col);
+    if (row == LV_TABLE_CELL_NONE || col == LV_TABLE_CELL_NONE) {
+        bluetooth_set_selected_index(-1);
+        refresh_soft_buttons();
+        return;
+    }
+
+    index = (intptr_t)lv_table_get_cell_user_data(obj, row, col);
+    bluetooth_set_selected_index((int)index);
+    refresh_soft_buttons();
 }
 
 static void bt_power_toggle_cb(button_data_t *btn_data) {
@@ -217,6 +325,30 @@ static void bt_power_toggle_cb(button_data_t *btn_data) {
     }
 
     refresh_status_labels();
+    refresh_device_table();
+    refresh_soft_buttons();
+}
+
+static void bt_scan_cb(button_data_t *btn_data) {
+    (void)btn_data;
+
+    if (!bluetooth_is_powered()) {
+        msg_update_text_fmt("Turn Bluetooth on first");
+        return;
+    }
+
+    if (bluetooth_scanning()) {
+        bluetooth_stop_scan();
+        msg_update_text_fmt("Scan stopped");
+    } else {
+        if (bluetooth_start_scan()) {
+            msg_update_text_fmt("Scanning...");
+        } else {
+            msg_update_text_fmt("Scan failed");
+        }
+    }
+
+    refresh_device_table();
     refresh_soft_buttons();
 }
 
@@ -236,7 +368,7 @@ static const char *bt_scan_label_getter(void) {
     if (!bluetooth_is_powered()) {
         return "";
     }
-    return "Scan";
+    return bluetooth_scanning() ? "Stop\nScan" : "Scan";
 }
 
 static const char *bt_pair_label_getter(void) {
